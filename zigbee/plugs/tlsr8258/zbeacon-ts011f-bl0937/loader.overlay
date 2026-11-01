@@ -1,0 +1,17 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Loader (MCUboot) devicetree of this device, on top of the board's default:
+ * UART0 is left alone, so the LED (PB1) and the button (PA0) keep their pins.
+ */
+
+/ {
+	chosen {
+		/delete-property/ zephyr,uart-mcumgr;
+		/delete-property/ zephyr,console;
+	};
+};
+
+&uart0 {
+	status = "disabled";
+};
