@@ -18,6 +18,7 @@
  */
 
 /* Zephyr headers go first, see plug.c */
+#include <stddef.h>
 #include <string.h>
 
 #include <zephyr/device.h>
@@ -31,6 +32,7 @@
 
 #include "app_common.h"
 #include "app_reporting.h"
+#include "drv_nv.h"
 
 #include "os/ev_timer.h"
 #include "zb_common.h"
@@ -313,7 +315,7 @@ static const struct amap amap[] = {
 	{IOTDRV_TT_F_HUMIDITY_OFFSET, APP_ENDPOINT, 2, SGN, HUM_CL, HUM_ATTR_OFFSET},
 };
 
-static int model = -1; /* index into iotdrv_tt_models, -1 until the MCU has told */
+static int model = -1; /* index into iotdrv_tt_models, -1 until known */
 
 static bool amap_applies(const struct amap *m, int field_kind)
 {
@@ -349,6 +351,146 @@ static void publish_field(enum iotdrv_tt_field field, s32 value)
 }
 
 /* ------------------------------------------------------------------ */
+/* Settings in NV                                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The thermostat keeps its settings in the MCU; this copy is what the module shows
+ * after a reset until the MCU has reported (or when it does not answer), and the
+ * model, so that the Basic model id is right from the start. The local temperature
+ * and the other values that keep changing are not stored.
+ */
+#define SETTINGS_ITEM     0x71U
+#define SETTINGS_VERSION  1U
+#define SETTINGS_SAVE_MS  5000
+
+struct settings {
+	u8 version;
+	s8 model;
+	s16 min_limit, max_limit, heat_setpoint, frost_protect, heat_protect;
+	s16 eco_heat, eco_cool, humidity_offset;
+	s8 calibration, dead_band, ext_calibration;
+	u8 system_mode, prog_mode, sensor_used, eco_mode, frost_onoff, sound, inversion;
+	u8 schedule_mode, level, mode_keylock, keypad_lockout, fan_mode, fan_control;
+	u8 level_a, level_b;
+	struct iotdrv_tt_schedule schedule;
+	u8 crc;
+};
+
+static struct settings settings_buf;
+static struct iotdrv_tt_schedule schedule;
+static ev_timer_event_t *settings_timer;
+
+static u8 crc8(const u8 *p, size_t n)
+{
+	u8 crc = 0U;
+
+	while (n-- > 0U) {
+		crc ^= *p++;
+		for (int i = 0; i < 8; i++) {
+			crc = (crc & 0x80U) ? (u8)((crc << 1) ^ 0x07U) : (u8)(crc << 1);
+		}
+	}
+	return crc;
+}
+
+static int settings_save_task(void *arg)
+{
+	struct settings *c = &settings_buf;
+
+	ARG_UNUSED(arg);
+	settings_timer = NULL;
+
+	memset(c, 0, sizeof(*c));
+	c->version = SETTINGS_VERSION;
+	c->model = (s8)model;
+	c->min_limit = th.min_limit;
+	c->max_limit = th.max_limit;
+	c->heat_setpoint = th.heat_setpoint;
+	c->frost_protect = th.frost_protect;
+	c->heat_protect = th.heat_protect;
+	c->eco_heat = th.eco_heat;
+	c->eco_cool = th.eco_cool;
+	c->humidity_offset = humidity_offset;
+	c->calibration = th.calibration;
+	c->dead_band = th.dead_band;
+	c->ext_calibration = th.ext_calibration;
+	c->system_mode = th.system_mode;
+	c->prog_mode = th.prog_mode;
+	c->sensor_used = th.sensor_used;
+	c->eco_mode = th.eco_mode;
+	c->frost_onoff = th.frost_onoff;
+	c->sound = th.sound;
+	c->inversion = th.inversion;
+	c->schedule_mode = th.schedule_mode;
+	c->level = th.level;
+	c->mode_keylock = th.mode_keylock;
+	c->keypad_lockout = ui_keypad_lockout;
+	c->fan_mode = fan_mode;
+	c->fan_control = fan_control;
+	c->level_a = level_a_current;
+	c->level_b = level_b_current;
+	c->schedule = schedule;
+	c->crc = crc8((const u8 *)c, offsetof(struct settings, crc));
+
+	/* NVS skips a write of what it already holds */
+	printk("tt: settings saved, nv %d\n",
+	       (int)nv_flashWriteNew(1, NV_MODULE_APP, SETTINGS_ITEM, sizeof(*c), (u8 *)c));
+	return -1;
+}
+
+/* The settings changed: write them once things have calmed down. */
+static void settings_dirty(void)
+{
+	if (settings_timer == NULL) {
+		settings_timer = ev_timer_taskPost(settings_save_task, NULL, SETTINGS_SAVE_MS);
+	}
+}
+
+static void settings_load(void)
+{
+	struct settings *c = &settings_buf;
+
+	nv_sts_t st = nv_flashReadNew(1, NV_MODULE_APP, SETTINGS_ITEM, sizeof(*c), (u8 *)c);
+
+	if (st != NV_SUCC || c->version != SETTINGS_VERSION || c->crc != crc8((const u8 *)c, offsetof(struct settings, crc)) ||
+	    c->model >= IOTDRV_TT_MODEL_COUNT) {
+		return;
+	}
+
+	model = c->model;
+	printk("tt: settings restored, model %d\n", model);
+	th.min_limit = c->min_limit;
+	th.max_limit = c->max_limit;
+	th.heat_setpoint = c->heat_setpoint;
+	th.cool_setpoint = c->heat_setpoint;
+	th.frost_protect = c->frost_protect;
+	th.heat_protect = c->heat_protect;
+	th.eco_heat = c->eco_heat;
+	th.eco_cool = c->eco_cool;
+	humidity_offset = c->humidity_offset;
+	th.calibration = c->calibration;
+	th.dead_band = c->dead_band;
+	th.ext_calibration = c->ext_calibration;
+	th.system_mode = c->system_mode;
+	th.prog_mode = c->prog_mode;
+	th.sensor_used = c->sensor_used;
+	th.eco_mode = c->eco_mode;
+	th.frost_onoff = c->frost_onoff;
+	th.sound = c->sound;
+	th.inversion = c->inversion;
+	th.schedule_mode = c->schedule_mode;
+	th.level = c->level;
+	th.mode_keylock = c->mode_keylock;
+	ui_keypad_lockout = c->keypad_lockout;
+	fan_mode = c->fan_mode;
+	fan_control = c->fan_control;
+	level_a_current = c->level_a;
+	level_b_current = c->level_b;
+	schedule = c->schedule;
+}
+
+/* ------------------------------------------------------------------ */
 /* MCU link                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -373,7 +515,6 @@ struct ev {
 
 K_MSGQ_DEFINE(ev_q, sizeof(struct ev), 6, 4);
 
-static struct iotdrv_tt_schedule schedule;
 static bool net_joined;
 
 static void ev_drain(void *arg);
@@ -471,6 +612,105 @@ static void send_field(enum iotdrv_tt_field field, s32 value)
 	}
 }
 
+/* ---- schedule pushes ---- */
+
+/*
+ * As the stock firmware does, the schedule goes to the coordinator as Set Weekly
+ * Schedule commands (to 0x0000, endpoint 1) when it changes, one day at a time,
+ * so that the coordinator learns it without asking.
+ */
+#define PUSH_GAP_MS 100
+
+static u8 push_pending;
+static ev_timer_event_t *push_timer;
+
+/* Mon .. Sat, then Sun: the order the stock firmware uses */
+static const u8 day_order[] = {IOTDRV_TT_DAY_MON, IOTDRV_TT_DAY_TUE, IOTDRV_TT_DAY_WED,
+			       IOTDRV_TT_DAY_THU, IOTDRV_TT_DAY_FRI, IOTDRV_TT_DAY_SAT,
+			       IOTDRV_TT_DAY_SUN};
+
+static u8 day_index(u8 bit)
+{
+	u8 d = 0U;
+
+	while (((bit >> d) & 1U) == 0U) {
+		d++;
+	}
+	return d;
+}
+
+/* The transitions of a day, in the shape of the command */
+static u8 day_transitions(u8 bit, heatMode_t *tr)
+{
+	unsigned int n = iotdrv_tt_schedule_transitions(model, bit);
+	u8 d = day_index(bit);
+
+	for (unsigned int t = 0; t < n; t++) {
+		tr[t].transTime = schedule.day[d][t].minutes;
+		tr[t].heatSetpoint = (u16)schedule.day[d][t].centi;
+	}
+	return (u8)n;
+}
+
+static void coordinator_dst(epInfo_t *dst)
+{
+	TL_SETSTRUCTCONTENT(*dst, 0);
+	dst->profileId = APP_HA_PROFILE_ID;
+	dst->dstAddrMode = APS_SHORT_DSTADDR_WITHEP;
+	dst->dstEp = APP_ENDPOINT;
+	dst->dstAddr.shortAddr = 0x0000U;
+}
+
+static void day_command(u8 bit, zcl_thermostat_setWeeklyScheduleCmd_t *cmd, heatMode_t *tr)
+{
+	TL_SETSTRUCTCONTENT(*cmd, 0);
+	cmd->numOfTransForSequence = day_transitions(bit, tr);
+	cmd->sequenceMode.pHeatMode = tr;
+	cmd->dayOfWeekForSequence = bit;
+	cmd->modeForSequence = HEAT_SERPOINT_FIELD_PRESENT;
+}
+
+static int push_tick(void *arg)
+{
+	zcl_thermostat_setWeeklyScheduleCmd_t cmd;
+	heatMode_t tr[IOTDRV_TT_TRANSITIONS];
+	epInfo_t dst;
+
+	ARG_UNUSED(arg);
+
+	if (model < 0 || !zb_isDeviceJoinedNwk()) {
+		push_pending = 0U;
+	}
+	for (size_t i = 0; i < ARRAY_SIZE(day_order); i++) {
+		u8 bit = day_order[i];
+
+		if ((push_pending & bit) == 0U) {
+			continue;
+		}
+		push_pending &= (u8)~bit;
+		coordinator_dst(&dst);
+		day_command(bit, &cmd, tr);
+		(void)zcl_thermostat_setWeeklyScheduleCmdSend(APP_ENDPOINT, &dst, 0U, &cmd);
+		if (push_pending != 0U) {
+			return PUSH_GAP_MS;
+		}
+		break;
+	}
+	push_timer = NULL;
+	return -1;
+}
+
+static void schedule_push(u8 days)
+{
+	if (model < 0) {
+		return;
+	}
+	push_pending |= days & iotdrv_tt_schedule_days(model);
+	if (push_pending != 0U && push_timer == NULL) {
+		push_timer = ev_timer_taskPost(push_tick, NULL, PUSH_GAP_MS);
+	}
+}
+
 static void model_apply(int idx)
 {
 	const struct iotdrv_tt_model *md = &iotdrv_tt_models[idx];
@@ -486,6 +726,7 @@ static void model_apply(int idx)
 		th.daily_transitions = 6;
 		th.weekly_transitions = 6 * 7;
 	}
+	settings_dirty();
 	(void)iotdrv_tuya_mcu_query_dps(&mcu);
 }
 
@@ -500,8 +741,15 @@ static void dp_apply(const struct ev *e)
 		return;
 	}
 
-	if (iotdrv_tt_schedule_from_dp(model, e->id, e->data, e->len, &schedule, &days) !=
-	    -ENOENT) {
+	switch (iotdrv_tt_schedule_from_dp(model, e->id, e->data, e->len, &schedule, &days)) {
+	case 0:
+		printk("tt: schedule dp %u, days 0x%02x\n", e->id, days);
+		settings_dirty();
+		schedule_push(days);
+		return;
+	case -ENOENT:
+		break;
+	default:
 		return;
 	}
 
@@ -529,6 +777,12 @@ static void dp_apply(const struct ev *e)
 	default:
 		publish_field(field, value);
 		break;
+	}
+
+	/* what keeps changing is not worth a write */
+	if (field != IOTDRV_TT_F_TEMP && field != IOTDRV_TT_F_TEMP_OUT &&
+	    field != IOTDRV_TT_F_HUMIDITY && field != IOTDRV_TT_F_RUNSTATE) {
+		settings_dirty();
 	}
 }
 
@@ -633,6 +887,7 @@ static void write_attr(u8 ep, u16 cluster, u16 attr, const u8 *data)
 
 	if (cluster == TH_CL && attr == ZCL_ATTRID_HVAC_THERMOSTAT_SYS_MODE) {
 		send_field(IOTDRV_TT_F_ONOFF, data[0] != SYS_MODE_OFF ? 1 : 0);
+		settings_dirty();
 		return;
 	}
 
@@ -649,6 +904,7 @@ static void write_attr(u8 ep, u16 cluster, u16 attr, const u8 *data)
 		s32 v = attr_value(data, m->size, (m->flags & SGN) != 0U);
 
 		send_field(m->field, v);
+		settings_dirty();
 		if (m->field == IOTDRV_TT_F_SETPOINT) {
 			/* heating and cooling are one set point */
 			u16 other = (attr == ZCL_ATTRID_HVAC_THERMOSTAT_OCCUPIED_HEATING_SETPOINT)
@@ -749,12 +1005,29 @@ static status_t set_weekly_schedule(const zcl_thermostat_setWeeklyScheduleCmd_t 
 	}
 
 	send_schedule(applied);
+	settings_dirty();
+	/* the stock firmware reports the schedule it now has back to the coordinator */
+	schedule_push(applied);
 	return ZCL_STA_SUCCESS;
 }
 
-static void get_weekly_schedule(zclIncomingAddrInfo_t *ai, const zcl_thermostat_getWeeklyScheduleCmd_t *cmd)
+/*
+ * Get Weekly Schedule, as the stock firmware answers it, whatever days were asked
+ * for: a response with the first day of the model's schedule (Monday; Sunday for
+ * r06), and the other days of the model as Set Weekly Schedule commands to the
+ * coordinator.
+ */
+static void get_weekly_schedule(zclIncomingAddrInfo_t *ai)
 {
+	u8 days = iotdrv_tt_schedule_days(model);
+	u8 first = (model == 5) ? IOTDRV_TT_DAY_SUN : IOTDRV_TT_DAY_MON;
+	zcl_thermostat_getWeeklyScheduleRspCmd_t rsp; /* the same layout as the Set command */
+	heatMode_t tr[IOTDRV_TT_TRANSITIONS];
 	epInfo_t dst;
+
+	if ((days & first) == 0U) {
+		return;
+	}
 
 	TL_SETSTRUCTCONTENT(dst, 0);
 	dst.profileId = ai->profileId;
@@ -762,28 +1035,10 @@ static void get_weekly_schedule(zclIncomingAddrInfo_t *ai, const zcl_thermostat_
 	dst.dstEp = ai->srcEp;
 	dst.dstAddr.shortAddr = ai->srcAddr;
 
-	/* one response per day: the days of a response share their transitions */
-	for (u8 d = 0; d < 7U; d++) {
-		u8 bit = BIT(d);
-		unsigned int n = iotdrv_tt_schedule_transitions(model, bit);
-		heatMode_t tr[IOTDRV_TT_TRANSITIONS];
-		zcl_thermostat_getWeeklyScheduleRspCmd_t rsp;
+	day_command(first, &rsp, tr);
+	(void)zcl_thermostat_getWeeklyScheduleRspCmdSend(APP_ENDPOINT, &dst, 0U, ai->seqNum, &rsp);
 
-		if ((cmd->daysToReturn & bit) == 0U || n == 0U) {
-			continue;
-		}
-		for (unsigned int t = 0; t < n; t++) {
-			tr[t].transTime = schedule.day[d][t].minutes;
-			tr[t].heatSetpoint = (u16)schedule.day[d][t].centi;
-		}
-		TL_SETSTRUCTCONTENT(rsp, 0);
-		rsp.sequenceMode.pHeatMode = tr;
-		rsp.numOfTransForSequence = (u8)n;
-		rsp.dayOfWeekForSequence = bit;
-		rsp.modeForSequence = HEAT_SERPOINT_FIELD_PRESENT;
-		(void)zcl_thermostat_getWeeklyScheduleRspCmdSend(APP_ENDPOINT, &dst, 1U,
-								 ai->seqNum, &rsp);
-	}
+	schedule_push(days & (u8)~first);
 }
 
 static status_t thermostat_cb(zclIncomingAddrInfo_t *ai, u8 cmd_id, void *payload)
@@ -805,7 +1060,7 @@ static status_t thermostat_cb(zclIncomingAddrInfo_t *ai, u8 cmd_id, void *payloa
 		if (model < 0) {
 			return ZCL_STA_FAILURE;
 		}
-		get_weekly_schedule(ai, payload);
+		get_weekly_schedule(ai);
 		return ZCL_STA_SUCCESS;
 	case ZCL_CMD_THERMOSTAT_CLEAR_WEEKLY_SCHEDULE:
 		return ZCL_STA_SUCCESS; /* the controller keeps its schedule, as the stock firmware */
@@ -951,6 +1206,12 @@ static int tick(void *arg)
 
 void app_device_register(void)
 {
+	/* before the Basic cluster is filled in: the saved model gives its model id */
+	settings_load();
+	if (model >= 0) {
+		app_basic_set_model_id(iotdrv_tt_models[model].name);
+	}
+
 	app_common_clusters(clusters);
 
 	CLUSTER(2, ZCL_CLUSTER_GEN_GROUPS, group_attr_tbl, zcl_group_register, NULL);

@@ -245,6 +245,66 @@ def run_model(args, md, root, rtt):
         proc.wait()
 
 
+def start_emu(args, root):
+    proc = subprocess.Popen([args.mcuemu, "serve", "--root", root, "--port", "0"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    port = None
+    for line in proc.stdout:
+        m = re.search(r":(\d+)", line)
+        if m:
+            port = int(m.group(1))
+            break
+    return proc, Emu(WebSocket(port))
+
+
+def persistence_test(args, md, root, rtt):
+    """The settings reach the NV: run a model, take the NV area, boot again without an MCU."""
+    nv_base, nv_size = 0x7c000, 0x4000  # zigbee_nv partition of the 512 KiB board
+    image = os.path.join(root, "thermostat.bin")
+    original = open(image, "rb").read()
+    text = ""
+    for attempt in (1, 2):
+        proc, emu = start_emu(args, root)
+        try:
+            emu.call("load", yaml=YAML.format(rtt="0x%x" % rtt))
+            emu.call("subscribe", endpoint="thermostat.zb.uart0")
+            emu.call("subscribe", endpoint="thermostat.zb.rtt")
+            parser, state, dump = FrameParser(), "query", None
+            for _ in range(args.max_steps):
+                emu.call("run", **{"for": "100ms", "wait": True})
+                for ev in emu.take_events():
+                    data = bytes.fromhex(ev["value"]["hex"])
+                    if ev["endpoint"].endswith("rtt"):
+                        text += data.decode("latin1")
+                        continue
+                    for cmd, _ in (parser.feed(data) if attempt == 1 else []):
+                        if cmd == 0x01 and state == "query":
+                            info = json.dumps({"p": md["products"][0]}).encode()
+                            emu.call("set", endpoint="thermostat.zb.uart0",
+                                     value={"hex": frame(0x01, info).hex()})
+                            state = "dps"
+                        elif cmd == 0x28 and state == "dps":
+                            payload = b"".join(d for d in (dp_bytes(i, t, l) for _, i, t, l in md["dps"]) if d)
+                            emu.call("set", endpoint="thermostat.zb.uart0",
+                                     value={"hex": frame(0x05, payload, seq=2).hex()})
+                            state = "reported"
+            if attempt == 1:
+                dump = emu.call("mem.read", mcu="thermostat.zb", address=nv_base, length=nv_size)["hex"]
+                with open(image, "wb") as f:  # the second boot starts with this NV
+                    f.write(original.ljust(nv_base, b"\xff") + bytes.fromhex(dump))
+                first = text
+                text = ""
+        finally:
+            proc.terminate()
+            proc.wait()
+    open(image, "wb").write(original)
+    saved = "tt: settings saved, nv 0" in first
+    restored = "tt: settings restored, model %d" % md["index"] in text
+    print("%s persistence: %s (saved %s, restored after reboot %s)" %
+          (md["name"], "ok" if saved and restored else "FAIL", saved, restored))
+    return saved and restored
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mcuemu", required=True)
@@ -254,6 +314,8 @@ def main():
     ap.add_argument("--models", required=True, help="lib/tuya_thermostat/tt_models.c")
     ap.add_argument("--nm", default=os.environ.get("LLVM_NM", "llvm-nm"))
     ap.add_argument("--model", type=int, action="append", help="model index (0 = r01), default all")
+    ap.add_argument("--persistence", action="store_true",
+                    help="also check that the settings survive a reboot (first selected model)")
     ap.add_argument("--verbose", action="store_true", help="print the RTT text and the frames")
     ap.add_argument("--max-steps", type=int, default=150)
     args = ap.parse_args()
@@ -284,6 +346,12 @@ def main():
                 print("  RTT: " + text.replace("\n", "\n       "))
                 print("  frames from the module: %s" % [f.hex() for f in frames])
             if not ok:
+                failed += 1
+    if args.persistence:
+        with tempfile.TemporaryDirectory() as root:
+            shutil.copy(args.image, os.path.join(root, "thermostat.bin"))
+            shutil.copy(args.coordinator, os.path.join(root, "coordinator.bin"))
+            if not persistence_test(args, models[list(selected)[0]], root, rtt):
                 failed += 1
     sys.exit(1 if failed else 0)
 

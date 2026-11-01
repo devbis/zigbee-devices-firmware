@@ -1,2 +1,3 @@
 build*/
 scripts/env.local
+__pycache__/
