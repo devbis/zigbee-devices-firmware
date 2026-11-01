@@ -82,11 +82,21 @@ static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 static bool led_user_on;
 static bool identify_active;
 static bool identify_blink_on;
+static bool search_blink_on;
 
+/* Blinks while Identify runs or the device is looking for a network. */
 static void led_apply(void)
 {
 #ifdef APP_HAS_LED
-	bool on = identify_active ? identify_blink_on : led_user_on;
+	bool on;
+
+	if (identify_active) {
+		on = identify_blink_on;
+	} else if (!zb_isDeviceJoinedNwk()) {
+		on = search_blink_on;
+	} else {
+		on = led_user_on;
+	}
 
 	gpio_pin_set_dt(&led, on ? 1 : 0);
 #endif
@@ -96,6 +106,18 @@ void app_led_set(bool on)
 {
 	led_user_on = on;
 	led_apply();
+}
+
+static ev_timer_event_t *led_timer;
+
+/* Toggles the search blink and notices joining or leaving the network. */
+static int led_tick(void *arg)
+{
+	ARG_UNUSED(arg);
+
+	search_blink_on = !search_blink_on;
+	led_apply();
+	return APP_IDENTIFY_TICK_MS;
 }
 
 /* ------------------------------------------------------------------ */
@@ -217,6 +239,10 @@ void app_endpoint_register(af_simple_descriptor_t *desc, zcl_specClusterInfo_t *
 	if (gpio_is_ready_dt(&led)) {
 		(void)gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
 	}
+	if (led_timer == NULL) {
+		led_timer = ev_timer_taskPost(led_tick, NULL, APP_IDENTIFY_TICK_MS);
+	}
+	led_apply();
 #endif
 
 	zcl_init(hook);
@@ -343,16 +369,6 @@ void app_buttons_init(app_button_cb_t cb)
 void zb_platform_app_register_endpoints(void)
 {
 	app_device_register();
-}
-
-const char *zb_platform_app_basic_mfr_name(void)
-{
-	return APP_MANUFACTURER;
-}
-
-const char *zb_platform_app_basic_model_id(void)
-{
-	return model_id_str;
 }
 
 bool zb_platform_app_get_fixed_join_target(struct zb_platform_bdb_fixed_target *target)
