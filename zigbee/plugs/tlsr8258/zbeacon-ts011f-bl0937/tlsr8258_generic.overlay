@@ -1,0 +1,77 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Zbeacon TS011F smart plug on the generic TLSR8258 board (512 KiB flash):
+ * relay, one LED, one button and a BL0937 energy meter. The pin map is the
+ * one recovered from the stock firmware in zigbee-rs-plugs
+ * (boards/tlsr8258-zbeacon-ts011f-bl0937).
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+	aliases {
+		sw0 = &button0;
+		relay0 = &relay;
+		energy-meter = &meter;
+	};
+
+	chosen {
+		/delete-property/ zephyr,console;
+	};
+
+	leds {
+		relay: relay {
+			gpios = <&gpiod 2 GPIO_ACTIVE_HIGH>;
+			label = "Relay";
+		};
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+
+		button0: button_0 {
+			gpios = <&gpioa 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Button";
+		};
+	};
+
+	meter: meter {
+		compatible = "belling,bl0937";
+		cf-gpios = <&gpiob 4 GPIO_ACTIVE_HIGH>;
+		cf1-gpios = <&gpiob 5 GPIO_ACTIVE_HIGH>;
+		sel-gpios = <&gpiod 3 GPIO_ACTIVE_HIGH>;
+		sel-high-is-voltage;
+		/*
+		 * Stock calibration (a different form from the board-component
+		 * properties below) is still to be carried over: see the README.
+		 * These are the datasheet defaults and need checking against a
+		 * known load.
+		 */
+		shunt-micro-ohms = <1000>;
+		voltage-divider-milli = <2351000>;
+		cf-pulses-per-kwh = <3200>;
+		current-noise-floor-milliamps = <14>;
+	};
+};
+
+/* The status LED is lit by a low level */
+&led0 {
+	gpios = <&gpiob 1 GPIO_ACTIVE_LOW>;
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&gpiod {
+	status = "okay";
+};
+
+&uart0 {
+	status = "disabled";
+};
+
+&zb {
+	status = "okay";
+};

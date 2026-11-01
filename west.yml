@@ -1,0 +1,23 @@
+# West manifest. Create a workspace with:
+#   west init -l zigbee-devices-firmware && west update
+manifest:
+  remotes:
+    - name: devbis
+      url-base: https://github.com/devbis
+
+  projects:
+    # Zephyr fork with the TLSR8258 port and the Zigbee stack
+    - name: zephyr
+      remote: devbis
+      repo-path: zephyr-tlsr8258
+      revision: zigbee-generic-stack
+      import: true
+    # Drivers and libraries (BL0937, BL0942, panels, Tuya MCU...)
+    # TODO: this repository has no remote yet; adjust url/revision after publishing.
+    - name: zephyr-iot-drivers
+      remote: devbis
+      revision: main
+      path: modules/lib/zephyr-iot-drivers
+
+  self:
+    path: zigbee-devices-firmware
