@@ -43,7 +43,10 @@ void app_common_clusters(zcl_specClusterInfo_t *clusters);
 void app_endpoint_register(af_simple_descriptor_t *desc, zcl_specClusterInfo_t *clusters,
 			   uint8_t num, zcl_hookFn_t hook);
 
-/* Drive led0 (a no-op on boards without one). Identify blinking overrides it. */
+/*
+ * Drive led0 (a no-op on boards without one) while the device is on a network.
+ * Blinking overrides it: Identify, and the search for a network.
+ */
 void app_led_set(bool on);
 
 /*

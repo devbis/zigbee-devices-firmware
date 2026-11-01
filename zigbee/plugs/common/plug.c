@@ -177,7 +177,8 @@ static void relay_set(bool on)
 {
 	onoff_state = on;
 	gpio_pin_set_dt(&relay, on ? 1 : 0);
-	app_led_set(on);
+	/* The status LED is the opposite of the relay */
+	app_led_set(!on);
 	zcl_setAttrVal(APP_ENDPOINT, ZCL_CLUSTER_GEN_ON_OFF, ZCL_ATTRID_ONOFF, (u8 *)&onoff_state);
 }
 
@@ -303,6 +304,7 @@ void app_device_register(void)
 	if (gpio_is_ready_dt(&relay)) {
 		(void)gpio_pin_configure_dt(&relay, GPIO_OUTPUT_INACTIVE);
 	}
+	app_led_set(true);
 
 	app_common_clusters(clusters);
 
