@@ -33,6 +33,9 @@
 /* Called while the ZCL layer is being set up; registers the device endpoint. */
 void app_device_register(void);
 
+/* The Basic model id, when it is not known at build time. At most 32 characters. */
+void app_basic_set_model_id(const char *model_id);
+
 /* Fill clusters[0] with Basic and clusters[1] with Identify. */
 void app_common_clusters(zcl_specClusterInfo_t *clusters);
 
