@@ -24,6 +24,7 @@
 #include <iot_drivers/energy_meter.h>
 
 #include "app_common.h"
+#include "app_reporting.h"
 
 #include "os/ev_timer.h"
 
@@ -276,75 +277,22 @@ static int measure_tick(void *arg)
 	return MEASURE_PERIOD_MS;
 }
 
-/*
- * Reporting. The table the coordinator configured is restored from NV after a
- * reset (the stack never calls zcl_reportingTabInit() itself), entries that no
- * longer match an attribute of this build are dropped, and the defaults below
- * fill what is missing, so a configuration from the coordinator wins. A report
- * goes out only when the coordinator has bound the cluster: the stack looks
- * the binding up and sends to it.
- */
-static void reporting_default(u16 cluster, u16 attr, u8 type, u16 min_s, u16 max_s,
-			      u32 change)
-{
-	u8 chg[REPORTABLE_CHANGE_MAX_ANALOG_SIZE] = {0};
-	zclCfgReportRec_t rec = {
-		.direction = ZCL_SEND_ATTR_REPORTS,
-		.attrID = attr,
-		.dataType = type,
-		.minReportInt = min_s,
-		.maxReportInt = max_s,
-		.timeoutPeriod = 0U,
-		.reportableChange = chg,
-	};
-
-	if (zcl_reportCfgInfoEntryFind(APP_ENDPOINT, cluster, attr) != NULL) {
-		return;
-	}
-	/* little-endian, as the stack compares it */
-	chg[0] = change;
-	chg[1] = change >> 8;
-	chg[2] = change >> 16;
-	chg[3] = change >> 24;
-	(void)zcl_configureReporting(APP_ENDPOINT, APP_HA_PROFILE_ID, cluster, &rec);
-}
-
-static void reporting_restore(void)
-{
-	u8 used = 0U;
-
-	zcl_reportingTabInit();
-
-	for (u8 i = 0; i < ZCL_REPORTING_TABLE_NUM; i++) {
-		reportCfgInfo_t *e = &reportingTab.reportCfgInfo[i];
-
-		if (!e->used) {
-			continue;
-		}
-		if (zcl_findAttribute(e->endPoint, e->clusterID, e->attrID) == NULL) {
-			zcl_reportCfgInfoEntryClear(e);
-			continue;
-		}
-		used++;
-	}
-	reportingTab.reportNum = used;
-}
-
+/* Defaults; a configuration from the coordinator wins (see app_reporting.h). */
 static void reporting_defaults(void)
 {
 	const u16 em = ZCL_CLUSTER_MS_ELECTRICAL_MEASUREMENT;
 
-	reporting_default(ZCL_CLUSTER_GEN_ON_OFF, ZCL_ATTRID_ONOFF, ZCL_DATA_TYPE_BOOLEAN, 0U,
+	app_reporting_default(APP_ENDPOINT, ZCL_CLUSTER_GEN_ON_OFF, ZCL_ATTRID_ONOFF, ZCL_DATA_TYPE_BOOLEAN, 0U,
 			  300U, 0U);
 	/* 1 V, 50 mA, 2 W */
-	reporting_default(em, ZCL_ATTRID_RMS_VOLTAGE, ZCL_DATA_TYPE_UINT16, 10U, 300U, 100U);
-	reporting_default(em, ZCL_ATTRID_RMS_CURRENT, ZCL_DATA_TYPE_UINT16, 10U, 300U, 50U);
-	reporting_default(em, ZCL_ATTRID_ACTIVE_POWER, ZCL_DATA_TYPE_INT16, 10U, 300U, 2U);
+	app_reporting_default(APP_ENDPOINT, em, ZCL_ATTRID_RMS_VOLTAGE, ZCL_DATA_TYPE_UINT16, 10U, 300U, 100U);
+	app_reporting_default(APP_ENDPOINT, em, ZCL_ATTRID_RMS_CURRENT, ZCL_DATA_TYPE_UINT16, 10U, 300U, 50U);
+	app_reporting_default(APP_ENDPOINT, em, ZCL_ATTRID_ACTIVE_POWER, ZCL_DATA_TYPE_INT16, 10U, 300U, 2U);
 	/*
 	 * The stack's change check has no 48-bit case, so the energy goes out
 	 * at the maximum interval only (the change value is ignored).
 	 */
-	reporting_default(ZCL_CLUSTER_SE_METERING, ZCL_ATTRID_CURRENT_SUMMATION_DELIVERD,
+	app_reporting_default(APP_ENDPOINT, ZCL_CLUSTER_SE_METERING, ZCL_ATTRID_CURRENT_SUMMATION_DELIVERD,
 			  ZCL_DATA_TYPE_UINT48, 60U, 600U, 0U);
 }
 
@@ -385,7 +333,7 @@ void app_device_register(void)
 	};
 
 	app_endpoint_register(&simple_desc, clusters, ARRAY_SIZE(clusters), NULL);
-	reporting_restore();
+	app_reporting_restore();
 	reporting_defaults();
 	app_buttons_init(button_cb);
 

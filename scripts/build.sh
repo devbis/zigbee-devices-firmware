@@ -57,8 +57,10 @@ loader_args=""
 # Date code of the Basic cluster: the day of this build (APP_BUILD_DATE overrides)
 APP_BUILD_DATE=${APP_BUILD_DATE:-$(date +%Y%m%d)}
 
+# Always from scratch: Zephyr keeps CONF_FILE in the CMake cache, and a change of the
+# list in a CMakeLists.txt would otherwise be ignored by an incremental build.
 out=$here/build/$(basename "$dev")
-"$west" build -p auto -b "$board" -d "$out" "$dev" -- \
+"$west" build -p always -b "$board" -d "$out" "$dev" -- \
   -DZEPHYR_EXTRA_MODULES="$ZEPHYR_EXTRA_MODULES" -DAPP_BUILD_DATE="$APP_BUILD_DATE" \
   $toolchain "$@"
 

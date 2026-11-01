@@ -41,7 +41,10 @@ static const u16 cluster_rev = ZCL_ATTR_GLOBAL_CLUSTER_REVISION_DEFAULT;
 
 /* ZCL character strings carry their length in the first byte. */
 static u8 basic_mfr_name[1U + sizeof(APP_MANUFACTURER)];
-static u8 basic_model_id[1U + sizeof(APP_MODEL_ID)];
+/* The model id may change at run time (a thermostat learns its model from its MCU) */
+#define APP_BASIC_STR_MAX 32U
+static u8 basic_model_id[1U + APP_BASIC_STR_MAX];
+static char model_id_str[APP_BASIC_STR_MAX + 1U] = APP_MODEL_ID;
 static u8 basic_sw_build[1U + sizeof(APP_SW_BUILD_ID)];
 static u8 basic_date_code[1U + sizeof(APP_DATE_CODE)];
 
@@ -167,12 +170,21 @@ static status_t identify_cb(zclIncomingAddrInfo_t *addr_info, u8 cmd_id, void *p
 	return ZCL_STA_SUCCESS;
 }
 
+void app_basic_set_model_id(const char *model_id)
+{
+	size_t n = strnlen(model_id, APP_BASIC_STR_MAX);
+
+	memcpy(model_id_str, model_id, n);
+	model_id_str[n] = '\0';
+	basic_model_id[0] = (u8)n;
+	memcpy(&basic_model_id[1], model_id_str, n);
+}
+
 void app_common_clusters(zcl_specClusterInfo_t *clusters)
 {
 	basic_mfr_name[0] = sizeof(APP_MANUFACTURER) - 1U;
 	memcpy(&basic_mfr_name[1], APP_MANUFACTURER, sizeof(APP_MANUFACTURER) - 1U);
-	basic_model_id[0] = sizeof(APP_MODEL_ID) - 1U;
-	memcpy(&basic_model_id[1], APP_MODEL_ID, sizeof(APP_MODEL_ID) - 1U);
+	app_basic_set_model_id(model_id_str);
 	basic_sw_build[0] = sizeof(APP_SW_BUILD_ID) - 1U;
 	memcpy(&basic_sw_build[1], APP_SW_BUILD_ID, sizeof(APP_SW_BUILD_ID) - 1U);
 	basic_date_code[0] = sizeof(APP_DATE_CODE) - 1U;
@@ -340,7 +352,7 @@ const char *zb_platform_app_basic_mfr_name(void)
 
 const char *zb_platform_app_basic_model_id(void)
 {
-	return APP_MODEL_ID;
+	return model_id_str;
 }
 
 bool zb_platform_app_get_fixed_join_target(struct zb_platform_bdb_fixed_target *target)

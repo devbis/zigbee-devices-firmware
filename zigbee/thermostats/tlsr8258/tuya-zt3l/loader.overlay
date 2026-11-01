@@ -1,0 +1,17 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Loader (MCUboot) devicetree of this device, on top of the board's default:
+ * UART0 belongs to the application, which talks to the thermostat MCU.
+ */
+
+/ {
+	chosen {
+		/delete-property/ zephyr,uart-mcumgr;
+		/delete-property/ zephyr,console;
+	};
+};
+
+&uart0 {
+	status = "disabled";
+};

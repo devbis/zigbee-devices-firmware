@@ -5,29 +5,37 @@ Firmware for Zigbee (and later other) devices on TLSR8258 and friends, built
 from the drivers and libraries of `zephyr-iot-drivers` on the Telink Zephyr
 fork (`zephyr-tlsr8258`, branch `zigbee-generic-stack`).
 
-    zigbee/plugs/
-      common/                            chip-independent plug code
-        plug.c, app_common.c/h           On/Off, measurements, Basic, Identify, buttons
-        plug.conf, plug.cmake            shared Kconfig and build rules
-      <chip>/<device>/                   one directory per plug model
-        CMakeLists.txt                   identity (manufacturer, model, power source)
-        prj.conf                         differences from plug.conf
-        <board>.overlay                  pins, meter, calibration of this plug
+    zigbee/
+      common/                            chip-independent code of every device
+        app_common.c/h                   bootstrap hooks, Basic, Identify, led0, buttons
+        app_reporting.c/h                restore and default attribute reporting
+        app.cmake, router.conf           versions, OTA info, sources; router, OTA, NVS settings
+      plugs/
+        common/                          plug.c, plug.conf, plug.cmake
+        <chip>/<device>/                 one directory per plug model
+      thermostats/
+        common/                          thermostat.c, thermostat.conf, thermostat.cmake
+        <chip>/<device>/                 one directory per thermostat module
+          CMakeLists.txt                 identity (manufacturer, model, power source)
+          prj.conf                       differences from the common .conf
+          <board>.overlay                pins of this device
+          loader.conf, loader.overlay    its MCUboot loader (serial recovery off here)
     scripts/build.sh                     build with the local Telink checkout
+    tests/emulator/                      thermostat run in the mcuemu emulator
 
-There is no board directory: a plug is the chip's generic board
+There is no board directory: a device is the chip's generic board
 (`tlsr8258_generic`, 512 KiB flash) plus its overlay. The board follows from
 the `<chip>` directory in `scripts/build.sh`. Code that depends on the chip but
-is shared between plugs of that chip goes to `zigbee/plugs/<chip>/common/`
-when it appears. Other device types (switches, thermostats) get their own
-directory next to `plugs/`.
+is shared between devices of that chip goes to `zigbee/<kind>/<chip>/common/`
+when it appears.
 
 Devices
 -------
 
-| Device | SoC | Meter |
+| Device | SoC | Measures with |
 |---|---|---|
 | `zigbee/plugs/tlsr8258/zbeacon-ts011f-bl0937` | TLSR8258 | BL0937 |
+| `zigbee/thermostats/tlsr8258/tuya-zt3l` | TLSR8258 (Tuya ZT3L module) | the thermostat's own MCU over UART |
 
 Build and OTA
 -------------
@@ -93,7 +101,7 @@ Versions
 
 Numbers follow the ZCL OTA file version, as in the Telink applications. They
 come from `version.txt` (`major.minor.build`, major and minor at most 15, build
-at most 255) and the stack constants in `zigbee/plugs/common/plug.cmake`:
+at most 255) and the stack constants in `zigbee/common/app.cmake`:
 
 | Number | Value | Example (`0.1.0`, stack 3.0 build 01) |
 |---|---|---|
@@ -117,6 +125,49 @@ Manufacturer name, model id and power source are `APP_MANUFACTURER`,
 Commissioning policy still comes from the Zephyr fork's `zigbee_shell` sample
 (`app_bdb.c`).
 
+Thermostats
+-----------
+
+`tuya-zt3l` is the Zigbee module of a Tuya floor-heating thermostat; the
+thermostat is a separate MCU that talks to the module over UART (9600 baud, TX
+PB1, RX PB7). One image serves all 13 models of `tuya_thermostat_zrd`
+(r01..r0D): the model comes from the MCU's product id, and the Basic model id
+becomes `Tuya_Thermostat_rXX` at run time, so Zigbee2MQTT recognizes it by
+that name as it does for the stock firmware. The datapoint tables and codecs
+are `lib/tuya_thermostat` of `zephyr-iot-drivers`, the protocol is
+`lib/tuya_mcu`.
+
+Endpoint 1 (thermostat): Basic, Identify, Groups, Level Control, Thermostat
+with the manufacturer attributes `0xF000..0xF010`, User Interface
+Configuration, Fan Control, Relative Humidity; out: Time, OTA. Endpoint 2:
+Level Control. The module asks the coordinator for the time and answers the MCU's
+time requests; it reports the network state to the MCU and resets its network
+settings when the MCU asks.
+
+Not done: Scenes, the manufacturer name attribute `0xF00E` of the stock
+firmware, schedule events of model r08 (its schedule is a state machine, the
+codecs return "not supported"), persistence of settings in the module, Touchlink.
+A Set Weekly Schedule with fewer transitions than the model keeps repeats the
+last one in the remaining slots. Not run on hardware.
+
+Emulator test
+-------------
+
+`tests/emulator/run_thermostat.py` runs a debug build (`-DEXTRA_CONF_FILE=debug.conf`,
+the firmware prints what it does to RTT) in the `mcuemu` emulator next to a
+coordinator and plays the thermostat's MCU on the UART: it answers the product
+query with the product id of each model, reports the model's datapoints and
+checks that the firmware picks the model, acknowledges the report and applies
+every datapoint. All 13 models pass (12 datapoints of r08 are applied, the four
+schedule-event datapoints are the unsupported ones). What it cannot see: the
+Zigbee side (the network is encrypted) and writes from the coordinator.
+
+    scripts/build.sh zigbee/thermostats/tlsr8258/tuya-zt3l -- \
+        -DEXTRA_CONF_FILE=$PWD/zigbee/thermostats/tlsr8258/tuya-zt3l/debug.conf
+    tests/emulator/run_thermostat.py --mcuemu .../mcuemu \
+        --image build/tuya-zt3l/tuya-zt3l-0.1.0-full.bin --elf build/tuya-zt3l/zephyr/zephyr.elf \
+        --coordinator .../samplegw_tb03f.bin --models .../lib/tuya_thermostat/tt_models.c
+
 Open items for `zbeacon-ts011f-bl0937`
 --------------------------------------
 
@@ -126,7 +177,8 @@ Open items for `zbeacon-ts011f-bl0937`
 - The energy total is not persisted: it restarts from zero after a reboot.
 - No protections (over/under voltage, over current) and no relay state
   restore yet.
-- No default attribute reporting: the coordinator must configure it.
+- Default reporting is set for on/off, voltage, current, power and energy, but
+  only reaches a coordinator that has bound the clusters.
 - The flash layout is the one of the fork's `tlsr8258_generic` board; it was
   not compared with the stock layout of this plug.
 - OTA is built and packaged but the whole path (loader start, download, install,
