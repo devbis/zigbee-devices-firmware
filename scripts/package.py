@@ -6,7 +6,7 @@
 
 Writes next to the build:
     <device>-<version>-signed.bin   MCUboot image for slot 0
-    <device>-<version>.ota          Zigbee OTA file for the coordinator
+    <device>-<version>.zigbee       Zigbee OTA file for the coordinator
     <device>-<version>-full.bin     loader + signed image, flashed once at 0x0
 
 Environment: ZEPHYR_BASE (the Zephyr tree, for the OTA packer), MCUBOOT_DIR (the
@@ -67,7 +67,7 @@ def main():
     name = dev.name
     stem = build / f"{name}-{version}"
     signed = Path(f"{stem}-signed.bin")
-    ota = Path(f"{stem}.ota")
+    ota = Path(f"{stem}.zigbee")
     full = Path(f"{stem}-full.bin")
 
     subprocess.run(
