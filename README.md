@@ -144,11 +144,20 @@ Level Control. The module asks the coordinator for the time and answers the MCU'
 time requests; it reports the network state to the MCU and resets its network
 settings when the MCU asks.
 
+The module keeps a copy of the settings and the schedule in NV (written 5 s after
+the last change, with a CRC), as the stock firmware does: after a reset the
+attributes and the Basic model id are right at once, before the MCU reports.
+Weekly schedule as the stock firmware does it: Get Weekly Schedule is answered
+with one response, the first day of the model's schedule (Monday, Sunday for
+r06), and the other days go to the coordinator as Set Weekly Schedule commands;
+the same commands are sent when the MCU reports a changed schedule and after a
+Set from the coordinator.
+
 Not done: Scenes, the manufacturer name attribute `0xF00E` of the stock
 firmware, schedule events of model r08 (its schedule is a state machine, the
-codecs return "not supported"), persistence of settings in the module, Touchlink.
-A Set Weekly Schedule with fewer transitions than the model keeps repeats the
-last one in the remaining slots. Not run on hardware.
+codecs return "not supported"), Touchlink. A Set Weekly Schedule with fewer
+transitions than the model keeps repeats the last one in the remaining slots.
+Not run on hardware.
 
 Emulator test
 -------------
@@ -158,7 +167,8 @@ the firmware prints what it does to RTT) in the `mcuemu` emulator next to a
 coordinator and plays the thermostat's MCU on the UART: it answers the product
 query with the product id of each model, reports the model's datapoints and
 checks that the firmware picks the model, acknowledges the report and applies
-every datapoint. All 13 models pass (12 datapoints of r08 are applied, the four
+every datapoint; with `--persistence` it also reboots the module with the NV it
+wrote and checks the model comes back. All 13 models pass (12 datapoints of r08 are applied, the four
 schedule-event datapoints are the unsupported ones). What it cannot see: the
 Zigbee side (the network is encrypted) and writes from the coordinator.
 

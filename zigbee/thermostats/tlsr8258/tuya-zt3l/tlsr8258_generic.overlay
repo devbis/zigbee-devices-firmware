@@ -16,6 +16,7 @@
 
 	chosen {
 		/delete-property/ zephyr,console;
+		zephyr,ieee802154 = &zb;
 	};
 };
 
