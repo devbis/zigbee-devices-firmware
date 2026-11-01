@@ -13,9 +13,9 @@ manifest:
       revision: zigbee-generic-stack
       import: true
     # Drivers and libraries (BL0937, BL0942, panels, Tuya MCU...)
-    # TODO: this repository has no remote yet; adjust url/revision after publishing.
     - name: zephyr-iot-drivers
       remote: devbis
+      repo-path: zephyr-iot-drivers   # https://github.com/devbis/zephyr-iot-drivers
       revision: main
       path: modules/lib/zephyr-iot-drivers
 

@@ -50,15 +50,15 @@ loader (`build/loader-<device>`), then the application as a slot-0 image, then
 | File | Use |
 |---|---|
 | `<device>-<ver>-full.bin` | loader at 0x0 + signed image at 0x8000; program once with the programmer |
-| `<device>-<ver>.ota` | Zigbee OTA file for the coordinator |
+| `<device>-<ver>.zigbee` | Zigbee OTA file for the coordinator |
 | `<device>-<ver>-signed.bin` | the MCUboot image inside both |
 
 The IEEE address (0x76000) and the Zigbee NV (0x7c000) are outside the image;
 do not erase them when programming.
 
 Release: raise `version.txt` in the device directory (`major.minor.build`),
-build, give the `.ota` to the coordinator (see Versions below). The OTA identity is the device's `APP_OTA_MANUFACTURER_CODE`
-and `APP_OTA_IMAGE_TYPE` in its `CMakeLists.txt`; they end up in the `.ota`
+build, give the `.zigbee` file to the coordinator (see Versions below). The OTA identity is the device's `APP_OTA_MANUFACTURER_CODE`
+and `APP_OTA_IMAGE_TYPE` in its `CMakeLists.txt`; they end up in the `.zigbee`
 header and in the firmware. The router asks for an update periodically,
 writes it to slot 1, MCUboot installs it, and the new image confirms itself
 30 s after it is on the network, or the loader goes back to the old one.
