@@ -1,0 +1,46 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Zbeacon TS0201 (manufacturer Zbeacon; zigbee2mqtt ZY-ZTH02): SHT40 on a software I2C, SDA PA0, SCL PB4.
+ * The pin map is the one of the board in ts0201_tz3000_zed (src/common/board_*.h).
+ * The battery is read on PC5 (VBAT mode, see sensor.dtsi).
+ */
+
+#include "../common/sensor.dtsi"
+
+/ {
+	aliases {
+		sw0 = &button0;
+		ambient-sensor = &sht40;
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+
+		button0: button_0 {
+			gpios = <&gpiob 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Button";
+		};
+	};
+
+	/* No hardware I2C on these pins: bit-banged, SDA PA0, SCL PB4 */
+	i2c_soft: i2c {
+		compatible = "gpio-i2c";
+		clock-frequency = <I2C_BITRATE_STANDARD>;
+		sda-gpios = <&gpioa 0 GPIO_PULL_UP>;
+		scl-gpios = <&gpiob 4 GPIO_PULL_UP>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		sht40: sht40@44 {
+			compatible = "sensirion,sht4x";
+			reg = <0x44>;
+			repeatability = <2>;
+		};
+	};
+};
+
+/* The status LED, off the board's default pin */
+&led0 {
+	gpios = <&gpioc 3 GPIO_ACTIVE_HIGH>;
+};

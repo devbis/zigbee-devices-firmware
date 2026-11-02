@@ -1,0 +1,86 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Xiaomi LYWSD03MMC (z03mmc) with its stock hardware: I2C on PC2/PC3 with a
+ * SHTC3 (board revision B1.4) or a SHT4x (B1.6, B1.9), the segment LCD on the
+ * same bus (B1.4, B1.9) or on UART0 (B1.6, TX on PD7), and two test points
+ * used as buttons. The revision is found at boot: the first sensor that
+ * answers is used, and the panel driver probes its own variants. The pin map
+ * is the one of the z03mmc firmware (board_8258_03mmc.h, lcd.c).
+ */
+
+#include "../common/sensor.dtsi"
+#include "../common/i2c-c2c3.dtsi"
+
+/ {
+	aliases {
+		sw0 = &button0;
+		ambient-sensor = &shtc3;
+		ambient-sensor-alt = &sht4x;
+		climate-display = &lcd;
+		/delete-property/ led0;
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+
+		/* the reset test point */
+		button0: button_0 {
+			gpios = <&gpioa 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Button";
+		};
+	};
+
+	lcd: lcd {
+		compatible = "iotdrv,lywsd03mmc-lcd";
+		i2c = <&i2c0>;
+		uart = <&uart0>;
+	};
+};
+
+&led0 {
+	status = "disabled";
+};
+
+&i2c0 {
+	shtc3: shtc3@70 {
+		compatible = "sensirion,shtc3", "sensirion,shtcx";
+		reg = <0x70>;
+		measure-mode = "normal";
+		clock-stretching;
+	};
+
+	sht4x: sht4x@44 {
+		compatible = "sensirion,sht4x";
+		reg = <0x44>;
+		repeatability = <2>;
+	};
+};
+
+&pinctrl {
+	uart0_tx_pd7: uart0_tx_pd7 {
+		pinmux = <TLSR8258_PINMUX(TLSR8258_GPIO_PD7, TLSR8258_FUNC_UART)>;
+		output-enable;
+	};
+};
+
+/* The B1.6 panel, at 38400 baud, 8N1, transmit only */
+&uart0 {
+	status = "okay";
+	current-speed = <38400>;
+	tx-pin = <TLSR8258_GPIO_PD7>;
+	/delete-property/ rx-pin;
+	pinctrl-0 = <&uart0_tx_pd7>;
+};
+
+/*
+ * A pin that goes to the LCD controller of the B1.4 revision: the stock firmware
+ * pulls it up, or the panel misbehaves in the cold.
+ */
+&gpiob {
+	pb6_pullup: pb6-pullup {
+		gpio-hog;
+		gpios = <6 GPIO_PULL_UP>;
+		input;
+	};
+};

@@ -1,0 +1,17 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Loader (MCUboot) devicetree of the sensors, on top of the board's default:
+ * UART0 is left alone, so the pins keep their uses.
+ */
+
+/ {
+	chosen {
+		/delete-property/ zephyr,uart-mcumgr;
+		/delete-property/ zephyr,console;
+	};
+};
+
+&uart0 {
+	status = "disabled";
+};

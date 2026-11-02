@@ -1,0 +1,64 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * What every TLSR8258 sensor board has: the battery voltage on the ADC (VBAT
+ * mode on PC5, the pin floating), no UART, and the radio. The board overlay
+ * adds the sensor, the button and the LED.
+ */
+
+#include <zephyr/dt-bindings/adc/adc.h>
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/i2c/i2c.h>
+#include <zephyr/dt-bindings/pinctrl/tlsr8258-pinctrl.h>
+
+/ {
+	chosen {
+		/delete-property/ zephyr,console;
+	};
+
+	zephyr,user {
+		io-channels = <&adc0 0>;
+	};
+};
+
+&adc0 {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@0 {
+		reg = <0>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <13>;
+		/* vendor pin index 10 is PC5 */
+		zephyr,input-positive = <10>;
+		telink,vbat-mode;
+	};
+};
+
+/* The button wakes the device from deep sleep through any of the four ports */
+&gpioa {
+	status = "okay";
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&gpioc {
+	status = "okay";
+};
+
+&gpiod {
+	status = "okay";
+};
+
+&uart0 {
+	status = "disabled";
+};
+
+&zb {
+	status = "okay";
+};
