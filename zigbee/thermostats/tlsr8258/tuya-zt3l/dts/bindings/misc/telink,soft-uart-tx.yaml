@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: Transmit-only software UART implemented on a GPIO
+
+compatible: "telink,soft-uart-tx"
+
+include: base.yaml
+
+properties:
+  gpios:
+    type: phandle-array
+    required: true
+    description: GPIO used as the UART TX output
+
+  current-speed:
+    type: int
+    required: true
+    description: UART baud rate

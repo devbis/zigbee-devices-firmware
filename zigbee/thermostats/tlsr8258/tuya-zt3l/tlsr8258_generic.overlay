@@ -3,13 +3,16 @@
  *
  * Tuya ZT3L module (TLSR8258, 512 KiB flash) on a floor-heating thermostat:
  * its only job is to talk to the thermostat's own MCU over UART0, 9600 baud,
- * TX on PB1 and RX on PB7. The module has no button and no LED.
+ * TX on PB1 and RX on PB7. PB5 is the 115200-baud software UART log output.
+ * The module has no button and no LED.
  */
 
 #include <zephyr/dt-bindings/pinctrl/tlsr8258-pinctrl.h>
+#include <zephyr/dt-bindings/gpio/gpio.h>
 
 / {
 	aliases {
+		softuart = &soft_uart_tx;
 		tuya-uart = &uart0;
 		/delete-property/ led0;
 	};
@@ -17,6 +20,17 @@
 	chosen {
 		/delete-property/ zephyr,console;
 	};
+
+	soft_uart_tx: soft-uart-tx {
+		compatible = "telink,soft-uart-tx";
+		gpios = <&gpiob 5 GPIO_ACTIVE_HIGH>;
+		current-speed = <115200>;
+		status = "okay";
+	};
+};
+
+&gpiob {
+	status = "okay";
 };
 
 &led0 {
