@@ -2,7 +2,8 @@
 cmake_minimum_required(VERSION 3.20)
 
 # Common options first, the device's prj.conf overrides them
-set(CONF_FILE ${CMAKE_CURRENT_LIST_DIR}/../../../common/router.conf
+set(CONF_FILE ${CMAKE_CURRENT_LIST_DIR}/../../../common/base.conf
+              ${CMAKE_CURRENT_LIST_DIR}/../../../common/router.conf
               ${CMAKE_CURRENT_LIST_DIR}/../../common/thermostat.conf
               ${CMAKE_CURRENT_LIST_DIR}/prj.conf)
 

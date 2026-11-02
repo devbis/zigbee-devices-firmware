@@ -13,6 +13,13 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#if defined(CONFIG_ZIGBEE_SLEEPY)
+#include <zephyr/pm/policy.h>
+#endif
+#if defined(CONFIG_ZIGBEE_SLEEPY_DEEP) && defined(CONFIG_SOC_SERIES_TLSR825X)
+#include "power.h"
+#define APP_BUTTON_WAKE 1
+#endif
 #include <zephyr/zigbee/zb_bootstrap.h>
 
 #include "zbapi/zb_api.h"
@@ -110,14 +117,34 @@ void app_led_set(bool on)
 
 static ev_timer_event_t *led_timer;
 
-/* Toggles the search blink and notices joining or leaving the network. */
+/*
+ * Toggles the search blink. The timer runs only while the device is looking for
+ * a network: once joined it stops, so a sleepy end device is not woken by it
+ * (led_search_start() arms it again when the device leaves the network).
+ */
 static int led_tick(void *arg)
 {
 	ARG_UNUSED(arg);
 
+	if (zb_isDeviceJoinedNwk()) {
+		search_blink_on = false;
+		led_timer = NULL;
+		led_apply();
+		return -1;
+	}
+
 	search_blink_on = !search_blink_on;
 	led_apply();
 	return APP_IDENTIFY_TICK_MS;
+}
+
+static void led_search_start(void)
+{
+#ifdef APP_HAS_LED
+	if (led_timer == NULL && !zb_isDeviceJoinedNwk()) {
+		led_timer = ev_timer_taskPost(led_tick, NULL, APP_IDENTIFY_TICK_MS);
+	}
+#endif
 }
 
 /* ------------------------------------------------------------------ */
@@ -239,9 +266,7 @@ void app_endpoint_register(af_simple_descriptor_t *desc, zcl_specClusterInfo_t *
 	if (gpio_is_ready_dt(&led)) {
 		(void)gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
 	}
-	if (led_timer == NULL) {
-		led_timer = ev_timer_taskPost(led_tick, NULL, APP_IDENTIFY_TICK_MS);
-	}
+	led_search_start();
 	led_apply();
 #endif
 
@@ -271,6 +296,7 @@ struct app_button {
 	struct k_work_delayable long_press;
 	uint8_t idx;
 	bool pressed;
+	bool pm_held;
 };
 
 static struct app_button buttons[] = {
@@ -316,6 +342,17 @@ static void button_debounce(struct k_work *work)
 	}
 	btn->pressed = pressed;
 
+#if defined(CONFIG_ZIGBEE_SLEEPY)
+	/* A sleepy end device stays awake while a button is down: the long press needs it */
+	if (pressed && !btn->pm_held) {
+		pm_policy_state_lock_get(PM_STATE_SOFT_OFF, PM_ALL_SUBSTATES);
+		btn->pm_held = true;
+	} else if (!pressed && btn->pm_held) {
+		pm_policy_state_lock_put(PM_STATE_SOFT_OFF, PM_ALL_SUBSTATES);
+		btn->pm_held = false;
+	}
+#endif
+
 	if (btn->idx == 0U) {
 		if (pressed) {
 			(void)k_work_reschedule(&btn->long_press, K_MSEC(APP_FACTORY_RESET_HOLD_MS));
@@ -337,6 +374,25 @@ static void button_isr(const struct device *port, struct gpio_callback *cb, uint
 }
 #endif /* DT_NODE_HAS_STATUS_OKAY(sw0) || sw1 */
 
+#ifdef APP_BUTTON_WAKE
+/* Let the button end a deep sleep; the wake is a reset, init then sees the level. */
+static void button_wake_arm(const struct gpio_dt_spec *spec)
+{
+	static const struct device *const ports[] = {
+		DEVICE_DT_GET(DT_NODELABEL(gpioa)), DEVICE_DT_GET(DT_NODELABEL(gpiob)),
+		DEVICE_DT_GET(DT_NODELABEL(gpioc)), DEVICE_DT_GET(DT_NODELABEL(gpiod)),
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE(ports); i++) {
+		if (spec->port == ports[i]) {
+			(void)tlsr8258_pm_configure_gpio_wakeup(
+				(uint8_t)i, spec->pin, (spec->dt_flags & GPIO_ACTIVE_LOW) != 0U, true);
+			return;
+		}
+	}
+}
+#endif
+
 void app_buttons_init(app_button_cb_t cb)
 {
 #ifdef APP_HAS_BUTTONS
@@ -355,6 +411,15 @@ void app_buttons_init(app_button_cb_t cb)
 		gpio_init_callback(&btn->cb, button_isr, BIT(btn->spec.pin));
 		(void)gpio_add_callback(btn->spec.port, &btn->cb);
 		(void)gpio_pin_interrupt_configure_dt(&btn->spec, GPIO_INT_EDGE_BOTH);
+#ifdef APP_BUTTON_WAKE
+		button_wake_arm(&btn->spec);
+#endif
+#if defined(CONFIG_ZIGBEE_SLEEPY)
+		/* Woken by this very button: the press edge is gone, take the level */
+		if (gpio_pin_get_dt(&btn->spec) > 0) {
+			(void)k_work_reschedule(&btn->debounce, K_MSEC(APP_BUTTON_DEBOUNCE_MS));
+		}
+#endif
 	}
 #else
 	ARG_UNUSED(cb);
@@ -404,6 +469,7 @@ void zb_platform_app_start_commissioning(void)
 
 void zb_platform_app_network_left(void)
 {
+	led_search_start();
 	app_bdb_network_left();
 }
 
