@@ -21,9 +21,15 @@
  *   battery        0.1 V and 0.5 %      calibration offsets in the same units
  *
  * Deep sleep: with CONFIG_ZIGBEE_SLEEPY_DEEP every wake is a reset, so the
- * firmware measures once per wake and reports straight away, instead of relying
- * on the stack's reporting timers (they would not survive the sleep). The wake
- * interval is CONFIG_ZIGBEE_ED_POLL_INTERVAL_MS. The settings live in NV.
+ * firmware measures once per wake, a wake being CONFIG_ZIGBEE_ED_POLL_INTERVAL_MS
+ * apart. The stack's reporting timers do not survive the sleep, so the report
+ * decision is made here, from the reporting configuration the coordinator wrote
+ * (minimum and maximum interval, reportable change): the time since the last
+ * report and the value last reported are kept in the retained RAM
+ * (CONFIG_TLSR8258_PM_DEEP_RETENTION, __tlsr8258_retained), and a value is reported
+ * when the change reaches the threshold after the minimum, or the maximum
+ * interval has passed. Without retention every wake reports everything bound.
+ * The settings live in NV.
  */
 
 /* The Zephyr headers go first: the Zigbee headers define macros such as abs() */
@@ -38,6 +44,9 @@
 #include "app_common.h"
 #include "app_reporting.h"
 #include "drv_nv.h"
+#if defined(CONFIG_TLSR8258_PM_DEEP_RETENTION)
+#include "power.h"
+#endif
 
 #include "os/ev_timer.h"
 #include "zb_common.h"
@@ -381,8 +390,9 @@ static void battery_update(void)
 
 	battery_voltage = (uint8_t)CLAMP((mv + 50) / 100, 0, 0xFE);
 	/* 0.5 % steps: 0..200 */
-	battery_percentage = (uint8_t)CLAMP((mv - BATTERY_MV_EMPTY) * 200 / (BATTERY_MV_FULL - BATTERY_MV_EMPTY),
-				       0, 200);
+	battery_percentage =
+		(uint8_t)CLAMP((mv - BATTERY_MV_EMPTY) * 200 / (BATTERY_MV_FULL - BATTERY_MV_EMPTY),
+			       0, 200);
 	zcl_setAttrVal(APP_ENDPOINT, ZCL_CLUSTER_GEN_POWER_CFG, ZCL_ATTRID_BATTERY_VOLTAGE,
 		       &battery_voltage);
 	zcl_setAttrVal(APP_ENDPOINT, ZCL_CLUSTER_GEN_POWER_CFG,
@@ -461,11 +471,7 @@ static void measure(void)
 /* ------------------------------------------------------------------ */
 
 #if defined(CONFIG_ZIGBEE_SLEEPY_DEEP)
-/*
- * Send what the coordinator bound the cluster for, at once. After a deep sleep
- * the stack's reporting table has lost its timers and previous values, so it
- * would hold the report back until a minimum interval the device never lives to see.
- */
+/* Send one cluster's attributes to the bound devices at once */
 static void report_now(uint16_t cluster, const zclReport_t *attrs, uint8_t n)
 {
 	struct {
@@ -486,6 +492,108 @@ static void report_now(uint16_t cluster, const zclReport_t *attrs, uint8_t n)
 				     (zclReportCmd_t *)&report);
 }
 
+#if defined(CONFIG_TLSR8258_PM_DEEP_RETENTION)
+/* What the reporting decision remembers across a deep sleep */
+#define RET_MAGIC 0x5345534EU
+
+enum { RET_T, RET_H, RET_B, RET_COUNT };
+
+static struct {
+	uint32_t magic;
+	uint32_t elapsed[RET_COUNT]; /* seconds since the last report of each */
+	int16_t last_t;
+	uint16_t last_h;
+	uint8_t last_battery;
+	uint8_t crc;
+} ret __tlsr8258_retained;
+
+static uint8_t ret_crc(void)
+{
+	return crc8((const uint8_t *)&ret, offsetof(__typeof__(ret), crc));
+}
+
+/* True when the retained state is valid; otherwise it is reset and everything is due */
+static bool ret_load(void)
+{
+	if (ret.magic == RET_MAGIC && ret.crc == ret_crc()) {
+		return true;
+	}
+
+	memset(&ret, 0, sizeof(ret));
+	ret.magic = RET_MAGIC;
+	return false;
+}
+
+/*
+ * Whether the attribute is due, from its reporting configuration: the maximum
+ * interval has passed, or the minimum has and the value moved by the reportable
+ * change. Nothing is due without a configuration (or with a disabled one).
+ */
+static bool report_due(bool fresh, uint32_t elapsed, uint16_t cluster, uint16_t attr,
+		       uint32_t moved)
+{
+	const reportCfgInfo_t *e = zcl_reportCfgInfoEntryFind(APP_ENDPOINT, cluster, attr);
+
+	if (e == NULL || e->maxInterval == 0xFFFFU) {
+		return false;
+	}
+	if (fresh || (e->maxInterval != 0U && elapsed >= e->maxInterval)) {
+		return true;
+	}
+	return elapsed >= e->minInterval && moved > 0U &&
+	       moved >= BUILD_U16(e->reportableChange[0], e->reportableChange[1]);
+}
+
+static uint32_t diff_u32(int32_t a, int32_t b)
+{
+	return (uint32_t)((a > b) ? (a - b) : (b - a));
+}
+
+static void report_all(void)
+{
+	/* The sleep between two wakes; the time awake is small beside it */
+	const uint32_t slept = CONFIG_ZIGBEE_ED_POLL_INTERVAL_MS / 1000U;
+	bool fresh = !ret_load();
+	zclReport_t t = {ZCL_TEMPERATURE_MEASUREMENT_ATTRID_MEASUREDVALUE, ZCL_DATA_TYPE_INT16,
+			 (uint8_t *)&temperature};
+	zclReport_t h = {ZCL_RELATIVE_HUMIDITY_ATTRID_MEASUREDVALUE, ZCL_DATA_TYPE_UINT16,
+			 (uint8_t *)&humidity};
+	zclReport_t b[2] = {
+		{ZCL_ATTRID_BATTERY_VOLTAGE, ZCL_DATA_TYPE_UINT8, &battery_voltage},
+		{ZCL_ATTRID_BATTERY_PERCENTAGE_REMAINING, ZCL_DATA_TYPE_UINT8, &battery_percentage},
+	};
+
+	for (int i = 0; i < RET_COUNT; i++) {
+		ret.elapsed[i] = MIN(ret.elapsed[i] + slept, 0xFFFFU);
+	}
+
+	if (temperature != (int16_t)0x8000 &&
+	    report_due(fresh, ret.elapsed[RET_T], ZCL_CLUSTER_MS_TEMPERATURE_MEASUREMENT,
+		       ZCL_TEMPERATURE_MEASUREMENT_ATTRID_MEASUREDVALUE,
+		       diff_u32(temperature, ret.last_t))) {
+		report_now(ZCL_CLUSTER_MS_TEMPERATURE_MEASUREMENT, &t, 1);
+		ret.elapsed[RET_T] = 0U;
+		ret.last_t = temperature;
+	}
+	if (humidity != 0xFFFFU &&
+	    report_due(fresh, ret.elapsed[RET_H], ZCL_CLUSTER_MS_RELATIVE_HUMIDITY,
+		       ZCL_RELATIVE_HUMIDITY_ATTRID_MEASUREDVALUE,
+		       diff_u32(humidity, ret.last_h))) {
+		report_now(ZCL_CLUSTER_MS_RELATIVE_HUMIDITY, &h, 1);
+		ret.elapsed[RET_H] = 0U;
+		ret.last_h = humidity;
+	}
+	if (battery_voltage != 0xFFU &&
+	    report_due(fresh, ret.elapsed[RET_B], ZCL_CLUSTER_GEN_POWER_CFG, ZCL_ATTRID_BATTERY_VOLTAGE,
+		       diff_u32(battery_voltage, ret.last_battery))) {
+		report_now(ZCL_CLUSTER_GEN_POWER_CFG, b, 2);
+		ret.elapsed[RET_B] = 0U;
+		ret.last_battery = battery_voltage;
+	}
+
+	ret.crc = ret_crc();
+}
+#else /* no retained RAM: every wake reports everything that is bound */
 static void report_all(void)
 {
 	zclReport_t t = {ZCL_TEMPERATURE_MEASUREMENT_ATTRID_MEASUREDVALUE, ZCL_DATA_TYPE_INT16,
@@ -507,6 +615,7 @@ static void report_all(void)
 		report_now(ZCL_CLUSTER_GEN_POWER_CFG, b, 2);
 	}
 }
+#endif /* CONFIG_TLSR8258_PM_DEEP_RETENTION */
 #endif /* CONFIG_ZIGBEE_SLEEPY_DEEP */
 
 /* Defaults for a coordinator that never configures reporting; its configuration wins. */

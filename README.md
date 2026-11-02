@@ -58,8 +58,14 @@ The sensors are battery powered sleepy end devices (Power Configuration, Tempera
 Measurement and Relative Humidity; the LYWSD03MMC adds Thermostat User Interface
 Configuration for its panel, with the attributes of the z03mmc firmware). They deep
 sleep between parent polls, `CONFIG_ZIGBEE_ED_POLL_INTERVAL_MS` apart (60 s, the
-LYWSD03MMC 30 s). Every wake is a reset: the firmware measures once, reports at once to
-the bound cluster, and the stack sleeps again. A button press wakes it too; hold it for
+LYWSD03MMC 30 s), with the SoC's SRAM retention (`CONFIG_TLSR8258_PM_DEEP_RETENTION`,
+LOW16K). Every wake is still a reset: the firmware measures once and decides from the
+coordinator's reporting configuration (minimum, maximum, reportable change) whether to
+report; the time since the last report and the value last reported are kept in the
+retained RAM. Mark what must survive a sleep with `__tlsr8258_retained` (`power.h`),
+keep a validity mark and a checksum in it, and size it with
+`CONFIG_TLSR8258_PM_RETENTION_SIZE`. The retention mode is not verified on hardware:
+if a sensor does not wake, set `CONFIG_TLSR8258_PM_DEEP_RETENTION=n` in its `prj.conf`. A button press wakes it too; hold it for
 5 s to reset to factory defaults. The pin maps come from the boards of
 `slacky1965/ts0201_tz3000_zed`. Build with `-DEXTRA_CONF_FILE=../common/awake.conf` (and
 `debug.conf`) for a sensor that stays awake while a debugger is attached.
