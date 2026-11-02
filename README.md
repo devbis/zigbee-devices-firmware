@@ -9,10 +9,17 @@ fork (`zephyr-tlsr8258`, branch `zigbee-generic-stack`).
       common/                            chip-independent code of every device
         app_common.c/h                   bootstrap hooks, Basic, Identify, led0, buttons
         app_reporting.c/h                restore and default attribute reporting
-        app.cmake, router.conf           versions, OTA info, sources; router, OTA, NVS settings
+        app.cmake                        versions, OTA info, sources
+        base.conf                        every device: stack, OTA, NVS settings
+        router.conf, end_device.conf     the role: router, or battery powered sleepy end device
       plugs/
         common/                          plug.c, plug.conf, plug.cmake
         <chip>/<device>/                 one directory per plug model
+      sensors/
+        common/                          sensor.c, sensor.conf, sensor.cmake
+        <chip>/common/                   what the boards of the chip share: sensor.dtsi (battery
+                                         ADC), i2c-c2c3.dtsi, loader.conf/overlay, debug.conf, awake.conf
+        <chip>/<device>/                 one directory per sensor model
       thermostats/
         common/                          thermostat.c, thermostat.conf, thermostat.cmake
         <chip>/<device>/                 one directory per thermostat module
@@ -36,6 +43,26 @@ Devices
 |---|---|---|
 | `zigbee/plugs/tlsr8258/zbeacon-ts011f-bl0937` | TLSR8258 | BL0937 |
 | `zigbee/thermostats/tlsr8258/tuya-zt3l` | TLSR8258 (Tuya ZT3L module) | the thermostat's own MCU over UART |
+| `zigbee/sensors/tlsr8258/xiaomi-lywsd03mmc` (z03mmc) | TLSR8258 | SHTC3 (B1.4) or SHT4x (B1.6, B1.9), segment LCD |
+| `zigbee/sensors/tlsr8258/tuya-ts0201-wsd500a` | TLSR8258 | CHT8305, hardware I2C |
+| `zigbee/sensors/tlsr8258/tuya-ts0201-ih-k009` | TLSR8258 | SHT30, hardware I2C |
+| `zigbee/sensors/tlsr8258/tuya-ts0201-z-wxd` | TLSR8258 | CHT8305, hardware I2C |
+| `zigbee/sensors/tlsr8258/zbeacon-zy-zth02` | TLSR8258 | SHT40, software I2C |
+| `zigbee/sensors/tlsr8258/zbeacon-th01` | TLSR8258 | SHT40, software I2C |
+| `zigbee/sensors/tlsr8258/hobeian-zg-227z` | TLSR8258 | AHT20, software I2C |
+
+Sensors
+-------
+
+The sensors are battery powered sleepy end devices (Power Configuration, Temperature
+Measurement and Relative Humidity; the LYWSD03MMC adds Thermostat User Interface
+Configuration for its panel, with the attributes of the z03mmc firmware). They deep
+sleep between parent polls, `CONFIG_ZIGBEE_ED_POLL_INTERVAL_MS` apart (60 s, the
+LYWSD03MMC 30 s). Every wake is a reset: the firmware measures once, reports at once to
+the bound cluster, and the stack sleeps again. A button press wakes it too; hold it for
+5 s to reset to factory defaults. The pin maps come from the boards of
+`slacky1965/ts0201_tz3000_zed`. Build with `-DEXTRA_CONF_FILE=../common/awake.conf` (and
+`debug.conf`) for a sensor that stays awake while a debugger is attached.
 
 Build and OTA
 -------------

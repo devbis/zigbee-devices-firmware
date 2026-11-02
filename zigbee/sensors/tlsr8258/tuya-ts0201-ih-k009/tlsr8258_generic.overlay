@@ -1,0 +1,39 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Tuya TS0201 (_TZ3000_dowj6gyi; zigbee2mqtt IH-K009): SHT30 on the hardware I2C.
+ * The pin map is the one of the board in ts0201_tz3000_zed (src/common/board_*.h).
+ * The battery is read on PC5 (VBAT mode, see sensor.dtsi).
+ * The board also has a power LED on PA0; it is left alone.
+ */
+
+#include "../common/sensor.dtsi"
+#include "../common/i2c-c2c3.dtsi"
+
+/ {
+	aliases {
+		sw0 = &button0;
+		ambient-sensor = &sht30;
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+
+		button0: button_0 {
+			gpios = <&gpioc 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Button";
+		};
+	};
+};
+
+&i2c0 {
+	sht30: sht30@44 {
+		compatible = "sensirion,sht3xd";
+		reg = <0x44>;
+	};
+};
+
+/* The status LED, off the board's default pin */
+&led0 {
+	gpios = <&gpiob 4 GPIO_ACTIVE_HIGH>;
+};

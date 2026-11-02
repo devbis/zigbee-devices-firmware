@@ -1,0 +1,28 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The hardware I2C controller on PC2 (SDA) and PC3 (SCL), the pair most of the
+ * boards use. Include after sensor.dtsi and put the chips under &i2c0.
+ */
+
+&pinctrl {
+	i2c0_sda_pc2: i2c0_sda_pc2 {
+		pinmux = <TLSR8258_PINMUX(TLSR8258_GPIO_PC2, TLSR8258_FUNC_I2C)>;
+		bias-pull-up;
+		input-enable;
+		output-enable;
+	};
+
+	i2c0_scl_pc3: i2c0_scl_pc3 {
+		pinmux = <TLSR8258_PINMUX(TLSR8258_GPIO_PC3, TLSR8258_FUNC_I2C)>;
+		bias-pull-up;
+		input-enable;
+		output-enable;
+	};
+};
+
+&i2c0 {
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+	pinctrl-0 = <&i2c0_sda_pc2 &i2c0_scl_pc3>;
+};

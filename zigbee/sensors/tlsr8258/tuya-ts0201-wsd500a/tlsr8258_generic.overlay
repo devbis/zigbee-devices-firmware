@@ -1,0 +1,39 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Tuya TS0201 (_TZ3000_xr3htd96, _TZ3000_fllyghyj, _TZ3000_0s1izerx; zigbee2mqtt WSD500A): CHT8305 on the hardware I2C.
+ * The pin map is the one of the board in ts0201_tz3000_zed (src/common/board_*.h).
+ * The battery is read on PC5 (VBAT mode, see sensor.dtsi).
+ * The board also has a power LED on PA0; it is left alone.
+ */
+
+#include "../common/sensor.dtsi"
+#include "../common/i2c-c2c3.dtsi"
+
+/ {
+	aliases {
+		sw0 = &button0;
+		ambient-sensor = &cht8305;
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+
+		button0: button_0 {
+			gpios = <&gpioc 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Button";
+		};
+	};
+};
+
+&i2c0 {
+	cht8305: cht8305@40 {
+		compatible = "sensylink,cht8305";
+		reg = <0x40>;
+	};
+};
+
+/* The status LED, off the board's default pin */
+&led0 {
+	gpios = <&gpiob 4 GPIO_ACTIVE_HIGH>;
+};

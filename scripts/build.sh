@@ -49,8 +49,14 @@ toolchain="-DTOOLCHAIN_VARIANT_COMPILER=llvm -DLLVM_TOOLCHAIN_PATH=$LLVM_TOOLCHA
 # (or using them otherwise) turns it off with its own loader.conf/loader.overlay
 loader=$here/build/loader-$(basename "$dev")
 loader_args=""
-[ -f "$dev/loader.conf" ] && loader_args="$loader_args -DEXTRA_CONF_FILE=$dev/loader.conf"
-[ -f "$dev/loader.overlay" ] && loader_args="$loader_args -DEXTRA_DTC_OVERLAY_FILE=$dev/loader.overlay"
+# a device's own loader.conf/loader.overlay, else the ones its chip directory shares
+for dir in "$dev" "$(dirname "$dev")/common"; do
+	if [ -f "$dir/loader.conf" ] || [ -f "$dir/loader.overlay" ]; then
+		[ -f "$dir/loader.conf" ] && loader_args="$loader_args -DEXTRA_CONF_FILE=$dir/loader.conf"
+		[ -f "$dir/loader.overlay" ] && loader_args="$loader_args -DEXTRA_DTC_OVERLAY_FILE=$dir/loader.overlay"
+		break
+	fi
+done
 # shellcheck disable=SC2086
 "$west" build -p auto -b "$board" -d "$loader" "$MCUBOOT_DIR/boot/zephyr" -- $toolchain $loader_args
 
