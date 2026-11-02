@@ -15,7 +15,7 @@ fork (`zephyr-tlsr8258`, branch `zigbee-generic-stack`).
       plugs/
         common/                          plug.c, plug.conf, plug.cmake
         <chip>/<device>/                 one directory per plug model
-      sensors/
+      sensors-temperature-humidity/
         common/                          sensor.c, sensor.conf, sensor.cmake
         <chip>/common/                   what the boards of the chip share: sensor.dtsi (battery
                                          ADC), i2c-c2c3.dtsi, loader.conf/overlay, debug.conf, awake.conf
@@ -43,13 +43,13 @@ Devices
 |---|---|---|
 | `zigbee/plugs/tlsr8258/zbeacon-ts011f-bl0937` | TLSR8258 | BL0937 |
 | `zigbee/thermostats/tlsr8258/tuya-zt3l` | TLSR8258 (Tuya ZT3L module) | the thermostat's own MCU over UART |
-| `zigbee/sensors/tlsr8258/xiaomi-lywsd03mmc` (z03mmc) | TLSR8258 | SHTC3 (B1.4) or SHT4x (B1.6, B1.9), segment LCD |
-| `zigbee/sensors/tlsr8258/tuya-ts0201-wsd500a` | TLSR8258 | CHT8305, hardware I2C |
-| `zigbee/sensors/tlsr8258/tuya-ts0201-ih-k009` | TLSR8258 | SHT30, hardware I2C |
-| `zigbee/sensors/tlsr8258/tuya-ts0201-z-wxd` | TLSR8258 | CHT8305, hardware I2C |
-| `zigbee/sensors/tlsr8258/zbeacon-zy-zth02` | TLSR8258 | SHT40, software I2C |
-| `zigbee/sensors/tlsr8258/zbeacon-th01` | TLSR8258 | SHT40, software I2C |
-| `zigbee/sensors/tlsr8258/hobeian-zg-227z` | TLSR8258 | AHT20, software I2C |
+| `zigbee/sensors-temperature-humidity/tlsr8258/xiaomi-lywsd03mmc` (z03mmc) | TLSR8258 | SHTC3 (B1.4) or SHT4x (B1.6, B1.9), segment LCD |
+| `zigbee/sensors-temperature-humidity/tlsr8258/tuya-ts0201-wsd500a` | TLSR8258 | CHT8305, hardware I2C |
+| `zigbee/sensors-temperature-humidity/tlsr8258/tuya-ts0201-ih-k009` | TLSR8258 | SHT30, hardware I2C |
+| `zigbee/sensors-temperature-humidity/tlsr8258/tuya-ts0201-z-wxd` | TLSR8258 | CHT8305, hardware I2C |
+| `zigbee/sensors-temperature-humidity/tlsr8258/zbeacon-zy-zth02` | TLSR8258 | SHT40, software I2C |
+| `zigbee/sensors-temperature-humidity/tlsr8258/zbeacon-th01` | TLSR8258 | SHT40, software I2C |
+| `zigbee/sensors-temperature-humidity/tlsr8258/hobeian-zg-227z` | TLSR8258 | AHT20, software I2C |
 
 Sensors
 -------
