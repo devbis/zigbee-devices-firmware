@@ -18,6 +18,7 @@
 
 	chosen {
 		/delete-property/ zephyr,console;
+		zephyr,ieee802154 = &zb;
 	};
 
 	leds {
@@ -64,7 +65,15 @@
 	status = "okay";
 };
 
+&gpioc {
+	status = "okay";
+};
+
 &gpiod {
+	status = "okay";
+};
+
+&gpioe {
 	status = "okay";
 };
 

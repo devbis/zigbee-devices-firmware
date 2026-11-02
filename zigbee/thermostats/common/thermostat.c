@@ -258,9 +258,9 @@ static const zclAttrInfo_t humidity_attr_tbl[] = {
 #define ONLY_UINT 0x02U /* only where the model's field is a plain value */
 #define NOT_UINT  0x04U /* only where it is a temperature */
 
-#define TH_CL  ZCL_CLUSTER_HAVC_THERMOSTAT
-#define UI_CL  ZCL_CLUSTER_HAVC_USER_INTERFACE_CONFIG
-#define FAN_CL ZCL_CLUSTER_HAVC_FAN_CONTROL
+#define TH_CL  ZCL_CLUSTER_HVAC_THERMOSTAT
+#define UI_CL  ZCL_CLUSTER_HVAC_USER_INTERFACE_CONFIG
+#define FAN_CL ZCL_CLUSTER_HVAC_FAN_CONTROL
 #define HUM_CL ZCL_CLUSTER_MS_RELATIVE_HUMIDITY
 
 struct amap {
@@ -668,7 +668,7 @@ static void day_command(uint8_t bit, zcl_thermostat_setWeeklyScheduleCmd_t *cmd,
 	cmd->numOfTransForSequence = day_transitions(bit, tr);
 	cmd->sequenceMode.pHeatMode = tr;
 	cmd->dayOfWeekForSequence = bit;
-	cmd->modeForSequence = HEAT_SERPOINT_FIELD_PRESENT;
+	cmd->modeForSequence = HEAT_SETPOINT_FIELD_PRESENT;
 }
 
 static int push_tick(void *arg)
@@ -981,7 +981,7 @@ static status_t set_weekly_schedule(const zcl_thermostat_setWeeklyScheduleCmd_t 
 	uint8_t applied = 0U;
 
 	if (model < 0 || p == NULL || cmd->numOfTransForSequence == 0U ||
-	    (cmd->modeForSequence & HEAT_SERPOINT_FIELD_PRESENT) == 0U) {
+	    (cmd->modeForSequence & HEAT_SETPOINT_FIELD_PRESENT) == 0U) {
 		return ZCL_STA_INVALID_FIELD;
 	}
 
@@ -1080,9 +1080,9 @@ static uint16_t in_clusters[] = {
 	ZCL_CLUSTER_GEN_IDENTIFY,
 	ZCL_CLUSTER_GEN_GROUPS,
 	ZCL_CLUSTER_GEN_LEVEL_CONTROL,
-	ZCL_CLUSTER_HAVC_THERMOSTAT,
-	ZCL_CLUSTER_HAVC_USER_INTERFACE_CONFIG,
-	ZCL_CLUSTER_HAVC_FAN_CONTROL,
+	ZCL_CLUSTER_HVAC_THERMOSTAT,
+	ZCL_CLUSTER_HVAC_USER_INTERFACE_CONFIG,
+	ZCL_CLUSTER_HVAC_FAN_CONTROL,
 	ZCL_CLUSTER_MS_RELATIVE_HUMIDITY,
 };
 
@@ -1218,11 +1218,11 @@ void app_device_register(void)
 
 	CLUSTER(2, ZCL_CLUSTER_GEN_GROUPS, group_attr_tbl, zcl_group_register, NULL);
 	CLUSTER(3, ZCL_CLUSTER_GEN_LEVEL_CONTROL, level_a_attr_tbl, zcl_level_register, NULL);
-	CLUSTER(4, ZCL_CLUSTER_HAVC_THERMOSTAT, thermostat_attr_tbl, zcl_thermostat_register,
+	CLUSTER(4, ZCL_CLUSTER_HVAC_THERMOSTAT, thermostat_attr_tbl, zcl_thermostat_register,
 		thermostat_cb);
-	CLUSTER(5, ZCL_CLUSTER_HAVC_USER_INTERFACE_CONFIG, ui_attr_tbl,
+	CLUSTER(5, ZCL_CLUSTER_HVAC_USER_INTERFACE_CONFIG, ui_attr_tbl,
 		zcl_thermostat_ui_cfg_register, NULL);
-	CLUSTER(6, ZCL_CLUSTER_HAVC_FAN_CONTROL, fan_attr_tbl, zcl_fan_control_register, NULL);
+	CLUSTER(6, ZCL_CLUSTER_HVAC_FAN_CONTROL, fan_attr_tbl, zcl_fan_control_register, NULL);
 	CLUSTER(7, ZCL_CLUSTER_MS_RELATIVE_HUMIDITY, humidity_attr_tbl,
 		zcl_relative_humidity_register, NULL);
 
