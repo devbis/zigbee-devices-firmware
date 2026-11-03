@@ -8,5 +8,4 @@ include(${CMAKE_CURRENT_LIST_DIR}/../../common/app.cmake)
 
 target_sources(app PRIVATE
 	${CMAKE_CURRENT_LIST_DIR}/thermostat.c
-	${CMAKE_CURRENT_LIST_DIR}/soft_uart.c
 )

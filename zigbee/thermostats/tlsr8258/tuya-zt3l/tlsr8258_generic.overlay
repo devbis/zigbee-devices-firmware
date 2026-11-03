@@ -23,7 +23,7 @@
 	};
 
 	soft_uart_tx: soft-uart-tx {
-		compatible = "telink,soft-uart-tx";
+		compatible = "iotdrv,soft-uart-console";
 		gpios = <&gpiob 5 GPIO_ACTIVE_HIGH>;
 		current-speed = <115200>;
 		status = "okay";
