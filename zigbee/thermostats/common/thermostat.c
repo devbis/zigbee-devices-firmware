@@ -24,6 +24,7 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 
 #include <iot_drivers/tuya_mcu.h>
 #include <iot_drivers/tuya_thermostat.h>
@@ -32,7 +33,6 @@
 #include "app_common.h"
 #include "app_reporting.h"
 #include "drv_nv.h"
-#include "soft_uart.h"
 
 #include "os/ev_timer.h"
 #include "zb_common.h"
@@ -434,7 +434,7 @@ static int settings_save_task(void *arg)
 	c->crc = crc8((const uint8_t *)c, offsetof(struct settings, crc));
 
 	/* NVS skips a write of what it already holds */
-	soft_uart_log("tt: settings saved, nv %d\n",
+	printk("tt: settings saved, nv %d\n",
 	       (int)nv_flashWriteNew(1, NV_MODULE_APP, SETTINGS_ITEM, sizeof(*c), (uint8_t *)c));
 	return -1;
 }
@@ -453,14 +453,13 @@ static void settings_load(void)
 
 	nv_sts_t st = nv_flashReadNew(1, NV_MODULE_APP, SETTINGS_ITEM, sizeof(*c), (uint8_t *)c);
 
-	if (st != NV_SUCC || c->version != SETTINGS_VERSION ||
-	    c->crc != crc8((const uint8_t *)c, offsetof(struct settings, crc)) ||
+	if (st != NV_SUCC || c->version != SETTINGS_VERSION || c->crc != crc8((const uint8_t *)c, offsetof(struct settings, crc)) ||
 	    c->model >= IOTDRV_TT_MODEL_COUNT) {
 		return;
 	}
 
 	model = c->model;
-	soft_uart_log("tt: settings restored, model %d\n", model);
+	printk("tt: settings restored, model %d\n", model);
 	th.min_limit = c->min_limit;
 	th.max_limit = c->max_limit;
 	th.heat_setpoint = c->heat_setpoint;
@@ -529,7 +528,7 @@ static void ev_put(const struct ev *e)
 	if (k_msgq_put(&ev_q, e, K_MSEC(EV_PUT_TIMEOUT_MS)) == 0) {
 		(void)zb_TaskPost(ev_drain, NULL);
 	} else {
-		soft_uart_log("tt: event dropped\n");
+		printk("tt: event dropped\n");
 	}
 }
 
@@ -607,7 +606,7 @@ static void send_field(enum iotdrv_tt_field field, int32_t value)
 	uint8_t buf[IOTDRV_TUYA_MAX_DATA];
 	int n = iotdrv_tt_to_dp(model, field, value, buf, sizeof(buf));
 
-	soft_uart_log("tt: write field %d = %d -> %d\n", (int)field, (int)value, n);
+	printk("tt: write field %d = %d -> %d\n", (int)field, (int)value, n);
 	if (n > 0) {
 		(void)iotdrv_tuya_mcu_send_dp(&mcu, buf, (size_t)n);
 	}
@@ -717,7 +716,7 @@ static void model_apply(int idx)
 	const struct iotdrv_tt_model *md = &iotdrv_tt_models[idx];
 
 	model = idx;
-	soft_uart_log("tt: model %s\n", md->name);
+	printk("tt: model %s\n", md->name);
 	app_basic_set_model_id(md->name);
 	th.abs_min = md->abs_min;
 	th.abs_max = md->abs_max;
@@ -744,7 +743,7 @@ static void dp_apply(const struct ev *e)
 
 	switch (iotdrv_tt_schedule_from_dp(model, e->id, e->data, e->len, &schedule, &days)) {
 	case 0:
-		soft_uart_log("tt: schedule dp %u, days 0x%02x\n", e->id, days);
+		printk("tt: schedule dp %u, days 0x%02x\n", e->id, days);
 		settings_dirty();
 		schedule_push(days);
 		return;
@@ -766,7 +765,7 @@ static void dp_apply(const struct ev *e)
 	if (iotdrv_tt_from_dp(model, field, e->data, e->len, &value) != 0) {
 		return;
 	}
-	soft_uart_log("tt: dp %u field %d = %d\n", e->id, field, (int)value);
+	printk("tt: dp %u field %d = %d\n", e->id, field, (int)value);
 
 	switch (field) {
 	case IOTDRV_TT_F_ONOFF:
@@ -806,7 +805,7 @@ static void ev_drain(void *arg)
 			dp_apply(&e);
 			break;
 		case EV_RESET:
-			soft_uart_log("tt: reset request\n");
+			printk("tt: reset request\n");
 			zb_factoryReset();
 			break;
 		}
@@ -879,8 +878,7 @@ static int32_t attr_value(const uint8_t *data, uint8_t size, bool is_signed)
 	if (size == 1U) {
 		return is_signed ? (int32_t)(int8_t)data[0] : (int32_t)data[0];
 	}
-	return is_signed ? (int32_t)(int16_t)(data[0] | (data[1] << 8))
-			 : (int32_t)(data[0] | (data[1] << 8));
+	return is_signed ? (int32_t)(int16_t)(data[0] | (data[1] << 8)) : (int32_t)(data[0] | (data[1] << 8));
 }
 
 static void write_attr(uint8_t ep, uint16_t cluster, uint16_t attr, const uint8_t *data)
@@ -1208,8 +1206,6 @@ static int tick(void *arg)
 
 void app_device_register(void)
 {
-	(void)soft_uart_init();
-
 	/* before the Basic cluster is filled in: the saved model gives its model id */
 	settings_load();
 	if (model >= 0) {

@@ -196,7 +196,8 @@ Emulator test
 -------------
 
 `tests/emulator/run_thermostat.py` runs a debug build (`-DEXTRA_CONF_FILE=debug.conf`,
-the firmware prints what it does to RTT) in the `mcuemu` emulator next to a
+the firmware prints what it does to RTT and mirrors the same `printk` stream to
+PB5 at 115200 baud) in the `mcuemu` emulator next to a
 coordinator and plays the thermostat's MCU on the UART: it answers the product
 query with the product id of each model, reports the model's datapoints and
 checks that the firmware picks the model, acknowledges the report and applies
